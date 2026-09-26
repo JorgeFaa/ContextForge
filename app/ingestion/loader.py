@@ -13,6 +13,7 @@ def load_document(path: Path) -> str:
 
     raise ValueError(f"Tipo de archivo no soportado: {suffix}")
 
+
 def _load_pdf(path: Path) -> str:
     reader = PdfReader(str(path))
     pages_text = [page.extract_text() or "" for page in reader.pages]
