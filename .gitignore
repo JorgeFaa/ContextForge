@@ -1,0 +1,38 @@
+# Entornos virtuales
+venv/
+.venv/
+env/
+
+# Bytecode y cachés de Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+
+# Variables de entorno / secretos
+.env
+.env.*
+!.env.example
+
+# Paquetes y builds
+*.egg-info/
+dist/
+build/
+
+# Datos locales del proyecto (documentos subidos, salidas generadas)
+data/
+graphify-out/
+*.log
+
+# Docker / Postgres (si algún día montas un volumen local en vez de un named volume)
+pgdata/
+
+# Editores / IDE
+.vscode/
+.idea/
+*.swp
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
