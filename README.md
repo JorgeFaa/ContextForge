@@ -73,7 +73,7 @@ Pregunta del usuario
 Requiere: Python 3.12, Docker, y opcionalmente Ollama (para correr el LLM localmente sin API key).
 
 ```bash
-git clone <este-repo>
+git clone https://github.com/JorgeFaa/ContextForge
 cd ContextForge
 
 python3.12 -m venv venv
