@@ -12,15 +12,17 @@ Construido como proyecto de aprendizaje/portafolio para explorar de punta a punt
 - Embeddings semánticos locales (`sentence-transformers`)
 - Almacenamiento en PostgreSQL con `pgvector`
 - Búsqueda híbrida: distancia coseno (HNSW) + full-text search nativo de Postgres (GIN + `tsvector`), combinadas con Reciprocal Rank Fusion (RRF)
-- Generación de respuestas con citación de fuentes, con proveedor de LLM configurable (Ollama local o Anthropic)
-- API REST (FastAPI) con dos endpoints: subir documentos y hacer preguntas
+- Generación de respuestas con citación de fuentes, con proveedor de LLM configurable (Ollama local o Anthropic) y selección de modelo por request
+- Gestor de documentos: subir, listar y eliminar (con borrado en cascada de sus chunks)
+- API REST completa (FastAPI) — ver [Endpoints](#endpoints)
+- Suite de tests unitarios (`pytest`) para la lógica pura del pipeline
 
 **No incluye (por ahora / fuera de alcance):**
-- Interfaz gráfica (se usa la API directamente o la UI interactiva de FastAPI en `/docs`)
-- Gestión de documentos (listar/eliminar) — solo ingesta y consulta
+- Interfaz gráfica — este repositorio es **solo la API**. La interfaz visual vive en un repositorio aparte, **ContextForgeStudio**, que consume esta API (mismo patrón que DataForge/DataForgeStudio)
 - Autenticación / multiusuario
 - Chunking semántico (se usa tamaño fijo de palabras, no por secciones/párrafos)
 - Re-ranking con modelos cross-encoder tras la fusión híbrida
+- Tests de integración contra una base de datos real (la capa de acceso a datos se valida hoy con pruebas manuales, ver [Evaluación](#evaluación))
 
 ## Arquitectura
 
@@ -93,9 +95,20 @@ ollama pull llama3.1
 uvicorn app.main:app --reload
 ```
 
-## Uso
+## Endpoints
 
-Interfaz interactiva en `http://localhost:8000/docs`, o vía `curl`:
+Documentación interactiva completa en `http://localhost:8000/docs`.
+
+| Método | Ruta | Qué hace |
+|---|---|---|
+| `GET` | `/health` | Confirma que el servicio está corriendo |
+| `POST` | `/documents` | Sube un documento (`.pdf`/`.txt`/`.md`), lo indexa (chunking + embeddings) |
+| `GET` | `/documents` | Lista los documentos indexados, con su número de chunks |
+| `DELETE` | `/documents/{id}` | Elimina un documento y sus chunks (borrado en cascada) |
+| `GET` | `/models` | Lista los modelos de Ollama disponibles localmente |
+| `POST` | `/query` | Busca contexto híbrido y genera una respuesta citando fuentes |
+
+## Uso
 
 **Subir un documento:**
 ```bash
@@ -103,11 +116,11 @@ curl -X POST http://localhost:8000/documents \
   -F "file=@ruta/al/documento.pdf"
 ```
 
-**Hacer una pregunta:**
+**Hacer una pregunta** (el campo `model` es opcional; si se omite, usa el definido en `.env`):
 ```bash
 curl -X POST http://localhost:8000/query \
   -H "Content-Type: application/json" \
-  -d '{"question": "¿De qué trata el documento?", "top_k": 3}'
+  -d '{"question": "¿De qué trata el documento?", "top_k": 3, "model": "llama3.1:latest"}'
 ```
 
 Respuesta:
@@ -129,7 +142,26 @@ Se probó el pipeline con el PDF de la trilogía *Nacidos de la Bruma* (Brandon 
 - Patrón de alucinación identificado: el modelo, al no encontrar el título exacto de un libro en el contexto recuperado, lo completaba con datos de su conocimiento previo (inventando títulos incorrectos) en vez de omitir esa información — señal de que el prompt de sistema puede reforzarse aún más.
 - La pregunta trampa (sobre un cuarto libro inexistente en la trilogía) fue correctamente identificada como fuera de contexto en todos los `top_k` probados.
 
-**Mejora en curso:** configurar explícitamente la ventana de contexto de Ollama (`num_ctx`), dado que el valor por defecto puede truncar silenciosamente el contexto cuando se recuperan más chunks, lo cual podría explicar el aumento de alucinaciones observado en `top_k=5`.
+**Mejora aplicada:** se configuró explícitamente la ventana de contexto de Ollama (`num_ctx`), ya que el valor por defecto truncaba silenciosamente el contexto al recuperar más chunks — esto reducía la información real disponible para el modelo sin previo aviso. Tras el cambio, se observó una disminución en las alucinaciones al repetir las mismas preguntas con `top_k=5`.
+
+## Testing
+
+```bash
+pip install -e ".[dev]"
+pytest tests/ -v
+```
+
+La suite cubre la lógica pura y determinista del pipeline — código sin dependencias externas (base de datos, red, modelos de ML), donde un test puede dar el mismo resultado siempre con la misma entrada:
+
+- `tests/test_chunker.py` — partición de texto en fragmentos y comportamiento del overlap
+- `tests/test_hybrid.py` — fusión de resultados con Reciprocal Rank Fusion (que un chunk presente en ambas búsquedas gane frente a uno presente en solo una, deduplicación, respeto de `top_k`)
+- `tests/test_loader.py` — extracción de texto por tipo de archivo y manejo de extensiones no soportadas
+
+Deliberadamente fuera de esta suite (dependen de infraestructura externa — Postgres, el modelo de embeddings, Ollama/Anthropic): `vector_store.py`, `keyword_store.py`, `embeddings.py`, `answer.py`. Esa capa se valida con las pruebas manuales documentadas en la sección de Evaluación.
+
+## Proyectos relacionados
+
+- **ContextForgeStudio** *(repositorio aparte, en planeación)* — interfaz visual que consume esta API. Mismo patrón de separación API/interfaz usado en DataForge / DataForgeStudio.
 
 ## Estructura del proyecto
 

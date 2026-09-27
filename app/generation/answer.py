@@ -14,18 +14,18 @@ def build_prompt(question: str, chunks: list[Chunk]) -> str:
     context = "\n\n".join(f"[Fragmento {i+1}]\n{chunk.text}" for i, chunk in enumerate(chunks))
     return f"Contexto:\n{context}\n\nPregunta: {question}"
 
-def generate_answer(question:str, chunks: list[Chunk]) -> str:
+def generate_answer(question:str, chunks: list[Chunk], model: str | None = None) -> str:
     prompt = build_prompt(question, chunks)
 
     if settings.llm_provider == "ollama":
-        return _call_ollama(prompt)
-    return _call_anthropic(prompt)
+        return _call_ollama(prompt, model or settings.ollama_model)
+    return _call_anthropic(prompt, model)
 
-def _call_ollama(prompt: str) -> str:
+def _call_ollama(prompt: str, model: str) -> str:
     response = httpx.post(
         f"{settings.ollama_base_url}/api/generate",
         json={
-            "model": settings.ollama_model,
+            "model": model,
             "system": SYSTEM_PROMPT,
             "prompt": prompt,
             "stream": False,
@@ -33,15 +33,23 @@ def _call_ollama(prompt: str) -> str:
         },
         timeout=60,
     )
+    if response.status_code == 404:
+        raise ValueError(f"El modelo '{model}' no esta disponible en Ollama.")
     response.raise_for_status()
     return response.json()["response"]
 
-def _call_anthropic(prompt: str) -> str:
+def _call_anthropic(prompt: str, model: str | None) -> str:
     client = Anthropic(api_key=settings.anthropic_api_key)
     message = client.messages.create(
-        model="claude-sonnet-5",
+        model=model or "claude-sonnet-5",
         max_tokens=1024,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
     return message.content[0].text
+
+def list_available_models() -> list[str]:
+    """Devuelve los modelos de Ollama descargados localmente"""
+    response = httpx.get(f"{settings.ollama_base_url}/api/tags", timeout = 10.0)
+    response.raise_for_status()
+    return [model["name"] for model in response.json()["models"]]
